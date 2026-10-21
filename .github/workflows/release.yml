@@ -1,0 +1,50 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      # Obsidian takes the version from manifest.json and downloads that tag's release: they must match.
+      - name: Check the tag matches manifest.json
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="$(node -p 'require("./manifest.json").version')"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $tag doesn't match manifest.json version $version. Bump the version files, commit, then tag."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - name: Build and test
+        run: |
+          npm ci
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # Published at once: manifest.json on main already names this version, so a draft would leave users
+          # with an update they can't download. Edit the notes on GitHub afterwards (or with gh release edit).
+          gh release create "$tag" --title="$tag" --latest --generate-notes main.js manifest.json styles.css

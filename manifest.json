@@ -1,0 +1,9 @@
+{
+  "id": "html-works",
+  "name": "HTML Works",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.7",
+  "description": "View HTML files and edit their source in the native editor, with Vim motions and editor extensions.",
+  "author": "zarnuq",
+  "isDesktopOnly": false
+}
