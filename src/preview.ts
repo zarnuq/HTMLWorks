@@ -20,10 +20,6 @@ export function buildPreview(source: string, resourceUrl: string, trusted: boole
   });
   const base = createEl("base");
   base.href = baseUrl;
-  // Links would navigate the frame itself; as popups, the sandbox refuses them.
-  base.target = "_blank";
-  doc.querySelectorAll("a[target], area[target]").forEach(el => el.removeAttribute("target"));
-  doc.querySelectorAll('a[href^="#"], area[href^="#"]').forEach(el => el.setAttribute("target", "_self"));
   const policy = createEl("meta");
   policy.httpEquiv = "Content-Security-Policy";
   // Previews never use the network: remote URLs stay unloaded and only vault files, inlined as data URLs, appear.
@@ -35,6 +31,10 @@ export function buildPreview(source: string, resourceUrl: string, trusted: boole
     "connect-src 'none'",
     "frame-src 'none'", "object-src 'none'", "form-action 'none'",
   ].join("; ");
+  // DNS prefetching is outside CSP; this switches it off for links the page or its scripts add.
+  const prefetch = createEl("meta");
+  prefetch.httpEquiv = "x-dns-prefetch-control";
+  prefetch.content = "off";
   const colorScheme = createEl("meta");
   colorScheme.name = "color-scheme";
   colorScheme.content = theme;
@@ -44,7 +44,13 @@ export function buildPreview(source: string, resourceUrl: string, trusted: boole
   const link = theme === "dark" ? "#a6b8ff" : "#245cc5";
   defaults.textContent = `:root{color-scheme:${theme};background-color:${background};color:${foreground}} body{margin:0;padding:28px;font:16px/1.6 system-ui,sans-serif;overflow-wrap:break-word} a{color:${link}} img,video{max-width:100%;height:auto} pre{overflow:auto} table{max-width:100%}`;
   // Author styles come later in the cascade and retain control of their own layout.
-  doc.head.prepend(policy, base, colorScheme, defaults);
+  doc.head.prepend(policy, prefetch, base, colorScheme, defaults);
+  if (trusted) {
+    // Runs before any author script: CSP does not cover WebRTC. Navigation is blocked by the wrapper frame.
+    const guard = createEl("script");
+    guard.textContent = NETWORK_GUARD;
+    defaults.after(guard);
+  }
   for (const img of Array.from(doc.querySelectorAll("img"))) {
     const replacement = imageOverrides[img.getAttribute("src") ?? ""];
     if (replacement) {
@@ -76,6 +82,8 @@ export function buildPreview(source: string, resourceUrl: string, trusted: boole
   doc.querySelectorAll("[style]").forEach(el => el.setAttribute("style", replaceCssUrls(el.getAttribute("style") ?? "", imageOverrides)));
   return `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
 }
+
+const NETWORK_GUARD = `for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection"]) delete window[name];`;
 
 const CSS_URL = /url\(\s*(['"]?)(.*?)\1\s*\)/g;
 

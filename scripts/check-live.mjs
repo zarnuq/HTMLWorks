@@ -15,14 +15,16 @@ async function checkLive() {
   const source = `<!doctype html>\r\n<h1>HTML Works live check</h1>\r\n<img src="${imagePath}">\r\n<script>document.body.dataset.untrustedScript="ran"</script>\r\n`;
   let leaf;
   const results = [];
+  const debuggerApi = require("electron").remote.getCurrentWebContents().debugger;
+  // Detach afterwards only if this check attached, so an open DevTools session keeps its debugger.
+  const attachedByCheck = !debuggerApi.isAttached();
+  if (attachedByCheck) debuggerApi.attach("1.3");
   const assert = (condition, message) => { if (!condition) throw Error(message); };
 
   async function inspect(view) {
     const frame = view.contentEl.querySelector("iframe.hw-preview");
     assert(frame, "Preview iframe missing");
     frame.setAttribute("data-html-works-check", prefix);
-    const debuggerApi = require("electron").remote.getCurrentWebContents().debugger;
-    if (!debuggerApi.isAttached()) debuggerApi.attach("1.3");
     let targetId;
     for (let attempt = 0; attempt < 20; attempt++) {
       view.contentEl.querySelector("iframe.hw-preview")?.setAttribute("data-html-works-check", prefix);
@@ -41,7 +43,17 @@ async function checkLive() {
     assert(targetId, "Preview frame did not finish loading");
     const { sessionId } = await debuggerApi.sendCommand("Target.attachToTarget", { targetId, flatten: true });
     try {
+      // The page is the wrapper's only child frame; an isolated world can read its DOM.
+      let page;
+      for (let attempt = 0; !page && attempt < 20; attempt++) {
+        const { frameTree } = await debuggerApi.sendCommand("Page.getFrameTree", {}, sessionId);
+        page = frameTree.childFrames?.[0]?.frame;
+        if (!page) await pause();
+      }
+      assert(page?.url === "about:srcdoc", `Preview page frame missing or navigated: ${page?.unreachableUrl ?? page?.url}`);
+      const { executionContextId } = await debuggerApi.sendCommand("Page.createIsolatedWorld", { frameId: page.id, worldName: prefix }, sessionId);
       const { result, exceptionDetails } = await debuggerApi.sendCommand("Runtime.evaluate", {
+        contextId: executionContextId,
         expression: `JSON.stringify({width:document.body.getBoundingClientRect().width,height:document.body.getBoundingClientRect().height,text:document.body.innerText,imageWidth:document.images[0]?.naturalWidth,imageComplete:document.images[0]?.complete,imageSource:document.images[0]?.currentSrc,background:getComputedStyle(document.documentElement).backgroundColor,color:getComputedStyle(document.body).color,scriptRan:!!document.body.dataset.untrustedScript})`,
         returnByValue: true,
       }, sessionId);
@@ -72,7 +84,7 @@ async function checkLive() {
         await pause();
         state = await inspect(view);
       }
-      assert(state.width > 0 && state.height > 0, `Blank preview after cycle ${cycle}`);
+      assert(state.width > 0 && state.height > 0, `Blank preview after cycle ${cycle}: ${JSON.stringify(state)}`);
       assert(state.text.includes("Source edit saved"), "Source edit missing from preview");
       assert(!state.scriptRan, "Untrusted script executed");
       assert(state.imageComplete && state.imageWidth === 40, `Relative vault image did not load: ${JSON.stringify(state)}`);
@@ -94,6 +106,7 @@ async function checkLive() {
     assert(saved.includes("Source edit saved") && saved.includes("\r\n"), "Source edits or CRLF line endings were not saved");
     return { ok: true, results };
   } finally {
+    if (attachedByCheck && debuggerApi.isAttached()) debuggerApi.detach();
     plugin.settings.pageTheme = originalTheme;
     await plugin.saveSettings();
     if (leaf?.view.file?.path === htmlPath) {

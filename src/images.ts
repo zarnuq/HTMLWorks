@@ -38,17 +38,19 @@ export class ImagesModal extends Modal {
       const selected = this.plugin.settings.imageOverrides[file.path]?.[src];
       if (selected) row.createDiv({ text: `Vault image: ${selected}` });
       const choose = row.createEl("button", { text: selected ? "Change image" : "Choose vault image" });
-      choose.addEventListener("click", () => new ImagePicker(this.app, file, image => {
+      choose.addEventListener("click", () => new ImagePicker(this.app, file, image => void (async () => {
         const overrides = this.plugin.settings.imageOverrides[file.path] ??= {};
         overrides[src] = image.path;
-        void this.plugin.saveSettings().then(() => this.onOpen());
-      }).open());
+        await this.plugin.saveSettings();
+        this.onOpen();
+      })()).open());
       if (selected) {
         const reset = row.createEl("button", { text: "Use original link" });
-        reset.addEventListener("click", () => {
+        reset.addEventListener("click", () => void (async () => {
           delete this.plugin.settings.imageOverrides[file.path]?.[src];
-          void this.plugin.saveSettings().then(() => this.onOpen());
-        });
+          await this.plugin.saveSettings();
+          this.onOpen();
+        })());
       }
     }
   }

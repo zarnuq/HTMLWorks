@@ -43,16 +43,22 @@ describe("HTML preview", () => {
 
   it("never reaches the network, even for trusted scripts, links or prefetch hints", () => {
     for (const trusted of [false, true]) {
-      const result = buildPreview('<link rel="dns-prefetch" href="//psu.instructure.com"><a href="https://example.com" target="_top">Out</a><a href="#top">Top</a>', "app://local/vault/a.html", trusted, "light");
+      const result = buildPreview('<link rel="dns-prefetch" href="//psu.instructure.com"><p>Text</p>', "app://local/vault/a.html", trusted, "light");
       const doc = new DOMParser().parseFromString(result, "text/html");
       const policy = doc.head.firstElementChild?.getAttribute("content") ?? "";
       expect(policy).not.toMatch(/https?:/);
       expect(policy).toContain("connect-src 'none'");
       expect(doc.querySelector("link")).toBeNull();
-      expect(doc.querySelector("base")?.target).toBe("_blank");
-      expect(doc.querySelector('a[href^="https"]')?.hasAttribute("target")).toBe(false);
-      expect(doc.querySelector('a[href="#top"]')?.getAttribute("target")).toBe("_self");
+      expect(doc.querySelector('meta[http-equiv="x-dns-prefetch-control"]')?.getAttribute("content")).toBe("off");
     }
+  });
+
+  it("removes WebRTC before any author script, only when scripts run", () => {
+    const parse = (trusted: boolean) => new DOMParser().parseFromString(buildPreview('<head><script>location.href="https://example.com"</script></head>', "app://local/vault/a.html", trusted, "light"), "text/html");
+    const scripts = Array.from(parse(true).scripts, el => el.textContent ?? "");
+    expect(scripts).toHaveLength(2);
+    expect(scripts[0]).toContain("RTCPeerConnection");
+    expect(parse(false).scripts).toHaveLength(1);
   });
 
   it("restricts embedded frames and connections by default", () => {

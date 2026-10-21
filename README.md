@@ -27,7 +27,7 @@ The preview never uses the network. Remote images, stylesheets, fonts and links 
 
 ## Scripts
 
-Scripts start disabled. **Scripts off** enables them for that individual trusted file; **Scripts on** disables them again. Even trusted pages remain sandboxed without access to the parent app, popups, forms, or top-level navigation. Embedded frames and objects are blocked. Trusted scripts get no network access either. Script-dependent content may require enabling scripts. Preview scripts stop when you switch to source.
+Scripts start disabled. **Scripts off** enables them for that individual trusted file; **Scripts on** disables them again. Even trusted pages remain sandboxed without access to the parent app, popups, forms, or top-level navigation. Embedded frames and objects are blocked. Trusted scripts get no network access either: requests, WebRTC, and navigating the preview to another page are all blocked. Script-dependent content may require enabling scripts. Preview scripts stop when you switch to source.
 
 ## Install
 

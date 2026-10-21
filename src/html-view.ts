@@ -1,4 +1,4 @@
-import { arrayBufferToBase64, FileView, MarkdownView, Menu, Notice, setIcon, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { arrayBufferToBase64, FileView, MarkdownView, Menu, normalizePath, Notice, setIcon, TFile, TFolder, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { buildPreview, cssUrls, localReferences, preserveLineEndings, replaceCssUrls } from "./preview";
 import { mountPreviewFrame } from "./preview-frame";
 import { attachmentNames, resourceMime, vaultImagePath } from "./image-path";
@@ -91,7 +91,10 @@ export class HtmlView extends MarkdownView {
   }
 
   showSearch(replace = false): void {
-    void this.changeMode("source").then(() => super.showSearch(replace));
+    void (async () => {
+      await this.changeMode("source");
+      super.showSearch(replace);
+    })();
   }
 
   private syncToolbar(): void {
@@ -136,12 +139,13 @@ export class HtmlView extends MarkdownView {
     const source = this.previewSource;
     const trusted = this.isTrusted();
     const theme = this.plugin.settings.pageTheme;
-    void this.previewImages(file, source).then(overrides => {
+    void (async () => {
+      const overrides = await this.previewImages(file, source);
       // Switching tabs, files or modes while images load must never mount an outdated preview.
       if (version !== this.renderVersion || this.file !== file || this.getMode() !== "preview") return;
       const html = buildPreview(source, this.app.vault.getResourcePath(file), trusted, theme, overrides);
       this.frame = mountPreviewFrame(this.previewMode.containerEl, html, trusted);
-    });
+    })();
   }
 
   private async previewImages(file: TFile, source: string): Promise<Record<string, string>> {
@@ -151,22 +155,27 @@ export class HtmlView extends MarkdownView {
     const overrides: Record<string, string> = {};
     const pending = new Map<string, Promise<string | undefined>>();
     const load = (path: string, nested = false): Promise<string | undefined> => {
+      path = normalizePath(path);
       const target = this.app.vault.getAbstractFileByPath(path);
       const mime = target instanceof TFile ? resourceMime(target.extension) : undefined;
       // Stylesheets are inlined one level deep, which also rules out url() cycles.
       if (!(target instanceof TFile) || !mime || (nested && mime === "text/css")) return Promise.resolve(undefined);
       let data = pending.get(path);
       if (!data) {
-        data = (mime === "text/css" ? this.inlineStylesheet(target, load) : this.app.vault.readBinary(target)
-          .then(bytes => `data:${mime};base64,${arrayBufferToBase64(bytes)}`)).catch(error => {
-          console.warn("HTML Works: could not read preview file", path, error);
-          return undefined;
-        });
+        data = (async () => {
+          try {
+            if (mime === "text/css") return await this.inlineStylesheet(target, load);
+            return `data:${mime};base64,${arrayBufferToBase64(await this.app.vault.readBinary(target))}`;
+          } catch (error) {
+            console.warn("HTML Works: could not read preview file", path, error);
+            return undefined;
+          }
+        })();
         pending.set(path, data);
       }
       return data;
     };
-    const attachments = this.app.vault.getAbstractFileByPath(`${file.path.slice(0, file.path.lastIndexOf("/") + 1)}${file.basename} attachments`);
+    const attachments = this.app.vault.getAbstractFileByPath(normalizePath(`${file.path.slice(0, file.path.lastIndexOf("/") + 1)}${file.basename} attachments`));
     const attached = new Map<string, string>();
     if (attachments instanceof TFolder) {
       const names = attachmentNames(Array.from(doc.querySelectorAll("img[src]"), img => img.getAttribute("src") ?? ""));

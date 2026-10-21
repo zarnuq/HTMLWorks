@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, SettingDefinitionItem, TFile, TFolder } from "obsidian";
+import { App, normalizePath, Notice, Plugin, PluginSettingTab, Setting, SettingDefinitionItem, TFile, TFolder } from "obsidian";
 import { HtmlView, VIEW_TYPE_HTML } from "./html-view";
 import { ImagesModal } from "./images";
 import { resourceMime } from "./image-path";
@@ -72,8 +72,8 @@ export default class HtmlWorksPlugin extends Plugin {
   private async createFile(folder?: TFolder): Promise<void> {
     const parent = folder ?? this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile()?.path ?? "");
     const prefix = parent.isRoot() ? "" : `${parent.path}/`;
-    let path = `${prefix}Untitled.html`;
-    for (let n = 1; this.app.vault.getAbstractFileByPath(path); n++) path = `${prefix}Untitled ${n}.html`;
+    let path = normalizePath(`${prefix}Untitled.html`);
+    for (let n = 1; this.app.vault.getAbstractFileByPath(path); n++) path = normalizePath(`${prefix}Untitled ${n}.html`);
     try {
       const file = await this.app.vault.create(path, '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>Untitled</title>\n</head>\n<body>\n  <h1>Untitled</h1>\n  <p>Start writing here.</p>\n</body>\n</html>\n');
       const leaf = this.app.workspace.getLeaf("tab");
